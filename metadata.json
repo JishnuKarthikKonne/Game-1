@@ -1,0 +1,6 @@
+{
+  "name": "PARADOX — 3D Tactical Puzzle",
+  "description": "Every move becomes part of your next problem. Coordinate with your past Echoes to solve multi-stage facility puzzles.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
