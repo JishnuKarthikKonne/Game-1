@@ -1,0 +1,22 @@
+{
+	"appId": "com.paradox.game",
+	"appName": "PARADOX",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https",
+		"cleartext": false
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	},
+	"plugins": {
+		"CapacitorCookies": {
+			"enabled": false
+		},
+		"CapacitorHttp": {
+			"enabled": false
+		}
+	}
+}

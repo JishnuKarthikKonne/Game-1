@@ -1,0 +1,169 @@
+name: Multi-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release Tag Name (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    name: Package Windows Desktop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/generate-icon.js
+      - run: npm run build
+      - run: npm run electron:compile
+      - run: npx electron-builder --win --config electron-builder.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-assets
+          path: release/windows/*.exe
+
+  android-release:
+    name: Package Android APKs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx cap sync android
+      - run: chmod +x android/gradlew
+      - name: Build Debug APK
+        run: |
+          mkdir -p release/android
+          cd android
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk ../release/android/PARADOX-debug.apk
+      - name: Build Release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cd android
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+            export RELEASE_STORE_FILE="release.keystore"
+            export RELEASE_STORE_PASSWORD="$KEYSTORE_PASSWORD"
+            export RELEASE_KEY_ALIAS="$KEY_ALIAS"
+            export RELEASE_KEY_PASSWORD="$KEY_PASSWORD"
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release.apk ../release/android/PARADOX-release.apk
+          else
+            ./gradlew assembleRelease --no-daemon
+            cp app/build/outputs/apk/release/app-release-unsigned.apk ../release/android/PARADOX-release-unsigned.apk
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-assets
+          path: release/android/*.apk
+
+  web-bundle:
+    name: Package Web Distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - name: Create Web Distribution Archive
+        run: |
+          mkdir -p release/web
+          cd dist && zip -r ../release/web/PARADOX-web-v1.0.0.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-assets
+          path: release/web/*.zip
+
+  publish:
+    name: Publish GitHub Release
+    needs: [windows-release, android-release, web-bundle]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-assets
+          path: release/windows
+
+      - name: Download Android Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: android-assets
+          path: release/android
+
+      - name: Download Web Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: web-assets
+          path: release/web
+
+      - name: Generate Checksums
+        run: |
+          mkdir -p release/checksums
+          cd release
+          sha256sum windows/* android/* web/* > checksums/SHA256SUMS.txt
+          cat checksums/SHA256SUMS.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
+          name: "PARADOX ${{ github.event.inputs.tag_name || github.ref_name }} — Multi-Platform Release"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## PARADOX — Chrono-Spatial 3D Tactical Puzzle
+            > *Every move becomes part of your next problem.*
+
+            ### 📦 Download Packages
+            - **Windows Installer (64-bit)**: `PARADOX-Setup.exe` (NSIS installer with customizable directory & shortcut)
+            - **Android APK (Debug)**: `PARADOX-debug.apk` (Instant sideloading, no signing prompt)
+            - **Android APK (Release)**: `PARADOX-release.apk` / `PARADOX-release-unsigned.apk`
+            - **Web Static Bundle**: `PARADOX-web-v1.0.0.zip` (Offline browser deployment)
+
+            ### 🛡️ Integrity Verification
+            SHA-256 checksums are attached in `SHA256SUMS.txt`.
+          files: |
+            release/windows/*
+            release/android/*
+            release/web/*
+            release/checksums/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

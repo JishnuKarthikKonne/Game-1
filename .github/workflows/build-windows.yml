@@ -1,0 +1,62 @@
+name: Build Windows Application
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'electron/**'
+      - 'public/**'
+      - 'package.json'
+      - 'vite.config.ts'
+      - 'electron-builder.json'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run verification test suite
+        run: npm test
+
+      - name: Generate build assets & icons
+        run: node scripts/generate-icon.js
+
+      - name: Build Web Application
+        run: npm run build
+
+      - name: Compile Electron scripts
+        run: npm run electron:compile
+
+      - name: Package Windows Installer & Unpacked Executable
+        run: npx electron-builder --win --config electron-builder.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows NSIS Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PARADOX-Windows-Installer
+          path: release/windows/*.exe
+          if-no-files-found: error
+
+      - name: Upload Windows Unpacked Directory Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PARADOX-Windows-Unpacked
+          path: release/windows/win-unpacked/
+          if-no-files-found: warn

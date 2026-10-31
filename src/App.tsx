@@ -33,6 +33,8 @@ import { GameOverModal } from './components/GameOverModal';
 import { HintModal } from './components/HintModal';
 import { LevelSelectModal } from './components/LevelSelectModal';
 import { SettingsModal } from './components/SettingsModal';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 
 type AppState = 'title' | 'playing' | 'paused' | 'gameover';
 
@@ -138,6 +140,62 @@ export default function App() {
       audioManager.startAmbience();
     }
   }, [appState, isMuted, progress.audioSettings]);
+
+  // Handle Android native back button and app lifecycle
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const backListener = CapApp.addListener('backButton', () => {
+      if (showHints) {
+        setShowHints(false);
+      } else if (showLevelSelect) {
+        setShowLevelSelect(false);
+      } else if (showSettings) {
+        setShowSettings(false);
+      } else if (appState === 'paused') {
+        setAppState('playing');
+      } else if (appState === 'playing') {
+        setAppState('paused');
+      } else if (appState === 'gameover') {
+        setAppState('title');
+      } else if (appState === 'title') {
+        CapApp.exitApp();
+      }
+    });
+
+    const stateListener = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) {
+        // App went to background
+        if (appState === 'playing') {
+          setAppState('paused');
+        }
+        audioManager.stopAmbience();
+      } else {
+        // App returned to foreground
+        if (!isMuted && (appState === 'playing' || appState === 'title')) {
+          audioManager.startAmbience();
+        }
+      }
+    });
+
+    return () => {
+      backListener.then((handle) => handle.remove());
+      stateListener.then((handle) => handle.remove());
+    };
+  }, [showHints, showLevelSelect, showSettings, appState, isMuted]);
+
+  // Tab visibility changes (desktop and browser)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        audioManager.stopAmbience();
+      } else if (!isMuted && appState === 'playing') {
+        audioManager.startAmbience();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [isMuted, appState]);
 
   // Handle Level Victory / Defeat Transitions
   useEffect(() => {

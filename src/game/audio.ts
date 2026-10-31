@@ -129,6 +129,25 @@ class SoundEngine {
     }
   }
 
+  public stopAmbience() {
+    if (!this.isAmbientPlaying) return;
+    try {
+      if (this.ambientOsc1) {
+        this.ambientOsc1.stop();
+        this.ambientOsc1.disconnect();
+        this.ambientOsc1 = null;
+      }
+      if (this.ambientOsc2) {
+        this.ambientOsc2.stop();
+        this.ambientOsc2.disconnect();
+        this.ambientOsc2 = null;
+      }
+    } catch {
+      // Audio stop safely ignored
+    }
+    this.isAmbientPlaying = false;
+  }
+
   public playStep() {
     this.ensureAudio();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
